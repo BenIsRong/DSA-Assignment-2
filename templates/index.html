@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maze Algorithm Explorer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0e17;
+            --surface: #111827;
+            --border: #1e293b;
+            --green: #74fcaf;
+            --blue: #2b72ff;
+            --red: #ff2929;
+            --text: #e2e8f0;
+            --text-dim: #64748b;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Space Mono', monospace;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Animated grid background */
+        .grid-bg {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(43, 114, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(43, 114, 255, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            animation: gridShift 20s linear infinite;
+            z-index: 0;
+        }
+
+        @keyframes gridShift {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(40px, 40px); }
+        }
+
+        /* Floating maze fragments */
+        .maze-fragment {
+            position: fixed;
+            border: 2px solid;
+            opacity: 0.08;
+            animation: float 15s ease-in-out infinite;
+            z-index: 0;
+        }
+
+        .maze-fragment:nth-child(1) {
+            width: 120px; height: 120px;
+            border-color: var(--green);
+            top: 10%; left: 5%;
+            animation-delay: 0s;
+        }
+
+        .maze-fragment:nth-child(2) {
+            width: 80px; height: 80px;
+            border-color: var(--blue);
+            top: 60%; right: 8%;
+            animation-delay: -5s;
+        }
+
+        .maze-fragment:nth-child(3) {
+            width: 160px; height: 60px;
+            border-color: var(--red);
+            bottom: 15%; left: 12%;
+            animation-delay: -10s;
+        }
+
+        .maze-fragment:nth-child(4) {
+            width: 60px; height: 140px;
+            border-color: var(--green);
+            top: 20%; right: 15%;
+            animation-delay: -3s;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            25% { transform: translate(20px, -30px) rotate(5deg); }
+            50% { transform: translate(-10px, 20px) rotate(-3deg); }
+            75% { transform: translate(15px, 10px) rotate(2deg); }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .title-block {
+            margin-bottom: 1rem;
+        }
+
+        .pre-title {
+            font-size: 0.75rem;
+            letter-spacing: 0.4em;
+            text-transform: uppercase;
+            color: var(--green);
+            margin-bottom: 0.75rem;
+            opacity: 0;
+            animation: fadeInUp 0.6s ease forwards 0.2s;
+        }
+
+        h1 {
+            font-family: 'Syne', sans-serif;
+            font-weight: 800;
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            line-height: 1;
+            letter-spacing: -0.03em;
+            margin-bottom: 0.5rem;
+            opacity: 0;
+            animation: fadeInUp 0.6s ease forwards 0.4s;
+        }
+
+        h1 .accent { color: var(--green); }
+        h1 .accent-blue { color: var(--blue); }
+
+        .subtitle {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            max-width: 480px;
+            margin: 0 auto 3rem;
+            line-height: 1.7;
+            opacity: 0;
+            animation: fadeInUp 0.6s ease forwards 0.6s;
+        }
+
+        .mode-cards {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            opacity: 0;
+            animation: fadeInUp 0.6s ease forwards 0.8s;
+        }
+
+        .mode-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2.5rem 2rem;
+            width: 320px;
+            text-decoration: none;
+            color: var(--text);
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            display: block;
+        }
+
+        .mode-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            transition: opacity 0.35s ease;
+        }
+
+        .mode-card.card-player::before {
+            background: linear-gradient(135deg, rgba(43, 114, 255, 0.08), transparent);
+        }
+
+        .mode-card.card-algo::before {
+            background: linear-gradient(135deg, rgba(116, 252, 175, 0.08), transparent);
+        }
+
+        .mode-card:hover {
+            transform: translateY(-6px);
+            border-color: var(--green);
+            box-shadow: 0 20px 60px rgba(116, 252, 175, 0.1);
+        }
+
+        .mode-card:hover::before { opacity: 1; }
+
+        .card-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .card-label {
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            font-size: 1.25rem;
+            margin-bottom: 0.75rem;
+            position: relative;
+        }
+
+        .card-desc {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            line-height: 1.7;
+            position: relative;
+        }
+
+        .card-arrow {
+            display: inline-block;
+            margin-top: 1.25rem;
+            font-size: 1.2rem;
+            color: var(--green);
+            transition: transform 0.3s ease;
+            position: relative;
+        }
+
+        .mode-card:hover .card-arrow { transform: translateX(8px); }
+
+        .legend {
+            margin-top: 3rem;
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            opacity: 0;
+            animation: fadeInUp 0.6s ease forwards 1s;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        .legend-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="grid-bg"></div>
+    <div class="maze-fragment"></div>
+    <div class="maze-fragment"></div>
+    <div class="maze-fragment"></div>
+    <div class="maze-fragment"></div>
+
+    <div class="container">
+        <div class="title-block">
+            <p class="pre-title">Interactive Learning Tool</p>
+            <h1>Maze <span class="accent">Algorithm</span><br><span class="accent-blue">Explorer</span></h1>
+        </div>
+        <p class="subtitle">
+            Discover how pathfinding algorithms navigate mazes.
+            Race against them or watch them compete head-to-head.
+        </p>
+
+        <div class="mode-cards">
+            <a href="/player-vs-algorithm" class="mode-card card-player">
+                <span class="card-icon">🎮</span>
+                <div class="card-label">Player vs Algorithm</div>
+                <div class="card-desc">
+                    Race against Dijkstra's or A* algorithm through a maze.
+                    Can you outsmart the machine?
+                </div>
+                <span class="card-arrow">→</span>
+            </a>
+            <a href="/algorithm-comparison" class="mode-card card-algo">
+                <span class="card-icon">⚡</span>
+                <div class="card-label">Algorithm Comparison</div>
+                <div class="card-desc">
+                    Watch Dijkstra's and A* race side by side.
+                    See how heuristics change everything.
+                </div>
+                <span class="card-arrow">→</span>
+            </a>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-swatch" style="background:#74fcaf"></div>
+                Untraversed
+            </div>
+            <div class="legend-item">
+                <div class="legend-swatch" style="background:#2b72ff"></div>
+                Current Position
+            </div>
+            <div class="legend-item">
+                <div class="legend-swatch" style="background:#ff2929"></div>
+                Traversed
+            </div>
+        </div>
+    </div>
+</body>
+</html>
