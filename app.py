@@ -2,8 +2,12 @@ from flask import Flask, render_template, jsonify
 import random
 import heapq
 import json
+from collections import deque
 
 app = Flask(__name__)
+
+MAZE_WIDTH = 37
+MAZE_HEIGHT = 37
 
 
 def generate_maze(width=50, height=50):
@@ -62,6 +66,23 @@ def generate_maze(width=50, height=50):
     return maze, start, end
 
 
+def shortest_path_distances(maze, start):
+    """Return shortest path distance from start to every reachable path cell."""
+    rows, cols = len(maze), len(maze[0])
+    dist = {start: 0}
+    queue = deque([start])
+
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and maze[nr][nc] == 1 and (nr, nc) not in dist:
+                dist[(nr, nc)] = dist[(r, c)] + 1
+                queue.append((nr, nc))
+
+    return dist
+
+
 def dijkstra_steps(maze, start, end):
     """Return the ordered list of cells Dijkstra visits (step by step)."""
     rows, cols = len(maze), len(maze[0])
@@ -70,7 +91,6 @@ def dijkstra_steps(maze, start, end):
     visited = set()
     heap = [(0, start)]
     steps = []
-    weights = {}  # node -> { g }
 
     while heap:
         d, node = heapq.heappop(heap)
@@ -78,7 +98,6 @@ def dijkstra_steps(maze, start, end):
             continue
         visited.add(node)
         steps.append(node)
-        weights[node] = {'g': d}
         if node == end:
             break
         r, c = node
@@ -100,8 +119,11 @@ def dijkstra_steps(maze, start, end):
     path.append(start)
     path.reverse()
 
-    # Convert weights to serializable format
-    weights_serial = {f"{k[0]},{k[1]}": v for k, v in weights.items()}
+    full_dist = shortest_path_distances(maze, start)
+    weights_serial = {
+        f"{r},{c}": {'g': distance}
+        for (r, c), distance in full_dist.items()
+    }
 
     return steps, path, weights_serial
 
@@ -120,7 +142,6 @@ def astar_steps(maze, start, end):
     heap = [(f_score[start], 0, start)]  # (f, tiebreaker, node)
     counter = 1
     steps = []
-    weights = {}  # node -> { g, h, f }
 
     while heap:
         f, _, node = heapq.heappop(heap)
@@ -129,8 +150,6 @@ def astar_steps(maze, start, end):
         visited.add(node)
         steps.append(node)
         g = g_score[node]
-        h = heuristic(node, end)
-        weights[node] = {'g': g, 'h': h, 'f': g + h}
         if node == end:
             break
         r, c = node
@@ -154,8 +173,15 @@ def astar_steps(maze, start, end):
     path.append(start)
     path.reverse()
 
-    # Convert weights to serializable format
-    weights_serial = {f"{k[0]},{k[1]}": v for k, v in weights.items()}
+    full_dist = shortest_path_distances(maze, start)
+    weights_serial = {
+        f"{r},{c}": {
+            'g': distance,
+            'h': heuristic((r, c), end),
+            'f': distance + heuristic((r, c), end)
+        }
+        for (r, c), distance in full_dist.items()
+    }
 
     return steps, path, weights_serial
 
@@ -177,11 +203,13 @@ def algorithm_comparison():
 
 @app.route('/api/generate-maze')
 def api_generate_maze():
-    maze, start, end = generate_maze(50, 50)
+    maze, start, end = generate_maze(MAZE_WIDTH, MAZE_HEIGHT)
     return jsonify({
         'maze': maze,
         'start': list(start),
-        'end': list(end)
+        'end': list(end),
+        'rows': len(maze),
+        'cols': len(maze[0])
     })
 
 

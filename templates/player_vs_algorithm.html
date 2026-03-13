@@ -15,7 +15,10 @@
             --red: #ff2929;
             --text: #e2e8f0;
             --text-dim: #64748b;
-            --cell-size: 11px;
+            --maze-cols: 37;
+            --maze-rows: 37;
+            --maze-display-size: 550px;
+            --cell-size: calc(var(--maze-display-size) / var(--maze-cols));
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -194,8 +197,8 @@
 
         .maze-grid {
             display: grid;
-            grid-template-columns: repeat(50, var(--cell-size));
-            grid-template-rows: repeat(50, var(--cell-size));
+            grid-template-columns: repeat(var(--maze-cols), var(--cell-size));
+            grid-template-rows: repeat(var(--maze-rows), var(--cell-size));
             gap: 0px;
             border: 2px solid var(--border);
             border-radius: 4px;
@@ -214,6 +217,68 @@
         .cell.current { background: var(--blue); }
         .cell.start { background: #ffd700; }
         .cell.end { background: #ff6ecb; }
+
+        .cell.show-weight {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cell-weight {
+            display: none;
+            font-size: calc(var(--cell-size) * 0.42);
+            font-family: 'Space Mono', monospace;
+            font-weight: 700;
+            line-height: 1;
+            color: rgba(0, 0, 0, 0.7);
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .show-weights .cell-weight {
+            display: block;
+        }
+
+        .show-weights .cell.wall .cell-weight {
+            display: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1.25rem;
+        }
+
+        .btn {
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 0.65rem 2rem;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-weight {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .btn-weight:hover {
+            border-color: #f59e0b;
+            color: #f59e0b;
+            transform: translateY(-2px);
+        }
+
+        .btn-weight.active {
+            background: #f59e0b;
+            color: var(--bg);
+            border-color: #f59e0b;
+        }
 
         .controls-hint {
             text-align: center;
@@ -413,6 +478,10 @@
                 <div class="legend-item"><div class="legend-swatch" style="background:#ff6ecb"></div> End</div>
             </div>
 
+            <div class="controls">
+                <button class="btn btn-weight" id="weightBtn" onclick="toggleWeights()">Show Weights</button>
+            </div>
+
             <div class="controls-hint">
                 Press <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> to move. Each move you make, the algorithm takes one step too.
             </div>
@@ -442,8 +511,17 @@
         let algorithm = '';
         let gameActive = false;
         let isPlayerTurn = true;
+        let showWeights = false;
+        let algoWeights = {};
 
         function cellKey(r, c) { return r + ',' + c; }
+
+        function syncMazeDimensions() {
+            const rows = maze.length;
+            const cols = maze[0]?.length || 0;
+            document.documentElement.style.setProperty('--maze-rows', rows);
+            document.documentElement.style.setProperty('--maze-cols', cols);
+        }
 
         async function startGame(algo) {
             algorithm = algo;
@@ -458,6 +536,7 @@
             start = data.start;
             end = data.end;
             playerPos = [...start];
+            syncMazeDimensions();
 
             // Get algorithm steps
             const params = new URLSearchParams({
@@ -468,7 +547,11 @@
             const solveRes = await fetch(`/api/solve/${algo}?${params}`);
             const solveData = await solveRes.json();
             algoStepsList = solveData.steps;
+            algoWeights = solveData.weights || {};
             algoCurrentStep = 0;
+            showWeights = false;
+            document.getElementById('weightBtn').textContent = 'Show Weights';
+            document.getElementById('weightBtn').classList.remove('active');
 
             playerVisited.clear();
             algoVisited.clear();
@@ -476,19 +559,21 @@
             algoVisited.add(cellKey(start[0], start[1]));
             playerStepCount = 0;
 
-            renderMaze('playerMaze', playerVisited, playerPos);
-            renderMaze('algoMaze', algoVisited, algoStepsList[0]);
+            renderMaze('playerMaze', playerVisited, playerPos, algoWeights);
+            renderMaze('algoMaze', algoVisited, algoStepsList[0], algoWeights);
 
             isPlayerTurn = true;
             updateTurnIndicator();
             gameActive = true;
         }
 
-        function renderMaze(containerId, visited, currentPos) {
+        function renderMaze(containerId, visited, currentPos, weights) {
             const container = document.getElementById(containerId);
+            if (showWeights) container.classList.add('show-weights');
+            else container.classList.remove('show-weights');
             container.innerHTML = '';
-            for (let r = 0; r < 50; r++) {
-                for (let c = 0; c < 50; c++) {
+            for (let r = 0; r < maze.length; r++) {
+                for (let c = 0; c < maze[0].length; c++) {
                     const cell = document.createElement('div');
                     cell.className = 'cell';
 
@@ -505,6 +590,17 @@
                     } else {
                         cell.classList.add('path');
                     }
+
+                    const key = cellKey(r, c);
+                    const w = weights[key];
+                    if (w) {
+                        cell.classList.add('show-weight');
+                        const span = document.createElement('span');
+                        span.className = 'cell-weight';
+                        span.textContent = w.f !== undefined ? w.f : w.g;
+                        cell.appendChild(span);
+                    }
+
                     container.appendChild(cell);
                 }
             }
@@ -552,7 +648,7 @@
                 algoCurrentStep++;
                 const pos = algoStepsList[algoCurrentStep];
                 algoVisited.add(cellKey(pos[0], pos[1]));
-                renderMaze('algoMaze', algoVisited, pos);
+                renderMaze('algoMaze', algoVisited, pos, algoWeights);
                 updateStats();
 
                 // Check if algorithm reached the end
@@ -563,6 +659,22 @@
             }
             isPlayerTurn = true;
             updateTurnIndicator();
+        }
+
+        function toggleWeights() {
+            showWeights = !showWeights;
+            const btn = document.getElementById('weightBtn');
+            if (showWeights) {
+                btn.textContent = 'Hide Weights';
+                btn.classList.add('active');
+            } else {
+                btn.textContent = 'Show Weights';
+                btn.classList.remove('active');
+            }
+
+            const algoPos = algoStepsList[algoCurrentStep] || start;
+            renderMaze('playerMaze', playerVisited, playerPos, algoWeights);
+            renderMaze('algoMaze', algoVisited, algoPos, algoWeights);
         }
 
         document.addEventListener('keydown', function(e) {
@@ -587,11 +699,14 @@
             const nc = playerPos[1] + dir[1];
 
             // Only actually move if the target is valid
-            const validMove = nr >= 0 && nr < 50 && nc >= 0 && nc < 50 && maze[nr][nc] === 1;
+            const validMove =
+                nr >= 0 && nr < maze.length &&
+                nc >= 0 && nc < maze[0].length &&
+                maze[nr][nc] === 1;
             if (validMove) {
                 playerPos = [nr, nc];
                 playerVisited.add(cellKey(nr, nc));
-                renderMaze('playerMaze', playerVisited, playerPos);
+                renderMaze('playerMaze', playerVisited, playerPos, algoWeights);
             }
 
             updateStats();

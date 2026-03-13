@@ -15,7 +15,10 @@
             --red: #ff2929;
             --text: #e2e8f0;
             --text-dim: #64748b;
-            --cell-size: 11px;
+            --maze-cols: 37;
+            --maze-rows: 37;
+            --maze-display-size: 550px;
+            --cell-size: calc(var(--maze-display-size) / var(--maze-cols));
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -92,6 +95,12 @@
         .info-badge .value { font-weight: 700; }
         .info-badge .value.dij-color { color: #f59e0b; }
         .info-badge .value.astar-color { color: #a78bfa; }
+        .info-badge .status {
+            margin-left: 0.4rem;
+            font-size: 0.65rem;
+            color: var(--green);
+            font-weight: 700;
+        }
 
         .mazes-container {
             display: flex;
@@ -121,8 +130,8 @@
 
         .maze-grid {
             display: grid;
-            grid-template-columns: repeat(50, var(--cell-size));
-            grid-template-rows: repeat(50, var(--cell-size));
+            grid-template-columns: repeat(var(--maze-cols), var(--cell-size));
+            grid-template-rows: repeat(var(--maze-rows), var(--cell-size));
             gap: 0px;
             border: 2px solid var(--border);
             border-radius: 4px;
@@ -151,7 +160,7 @@
 
         .cell-weight {
             display: none;
-            font-size: 5px;
+            font-size: calc(var(--cell-size) * 0.42);
             font-family: 'Space Mono', monospace;
             font-weight: 700;
             line-height: 1;
@@ -164,8 +173,7 @@
             display: block;
         }
 
-        .show-weights .cell.wall .cell-weight,
-        .show-weights .cell.path .cell-weight {
+        .show-weights .cell.wall .cell-weight {
             display: none;
         }
 
@@ -457,10 +465,12 @@
                 <div class="info-badge">
                     <span class="label">Dijkstra Steps: </span>
                     <span class="value dij-color" id="dijSteps">0</span>
+                    <span class="status" id="dijStatus"></span>
                 </div>
                 <div class="info-badge">
                     <span class="label">A* Steps: </span>
                     <span class="value astar-color" id="astarSteps">0</span>
+                    <span class="status" id="astarStatus"></span>
                 </div>
             </div>
 
@@ -533,6 +543,8 @@
         let astarVisited = new Set();
         let autoInterval = null;
         let finished = false;
+        let dijDone = false;
+        let astarDone = false;
         let showWeights = false;
         let dijWeights = {};
         let astarWeights = {};
@@ -554,6 +566,13 @@
 
         function cellKey(r, c) { return r + ',' + c; }
 
+        function syncMazeDimensions() {
+            const rows = maze.length;
+            const cols = maze[0]?.length || 0;
+            document.documentElement.style.setProperty('--maze-rows', rows);
+            document.documentElement.style.setProperty('--maze-cols', cols);
+        }
+
         async function init() {
             // Generate maze
             const res = await fetch('/api/generate-maze');
@@ -561,6 +580,7 @@
             maze = data.maze;
             start = data.start;
             end = data.end;
+            syncMazeDimensions();
 
             // Get both algorithm steps
             const params = new URLSearchParams({
@@ -583,6 +603,8 @@
             astarWeights = astarData.weights || {};
             dijCurrent = 0;
             astarCurrent = 0;
+            dijDone = false;
+            astarDone = false;
 
             dijVisited.clear();
             astarVisited.clear();
@@ -604,8 +626,8 @@
             if (showW) container.classList.add('show-weights');
             else container.classList.remove('show-weights');
 
-            for (let r = 0; r < 50; r++) {
-                for (let c = 0; c < 50; c++) {
+            for (let r = 0; r < maze.length; r++) {
+                for (let c = 0; c < maze[0].length; c++) {
                     const cell = document.createElement('div');
                     cell.className = 'cell';
 
@@ -625,10 +647,9 @@
                     }
                     cell.classList.add(cellType);
 
-                    // Add weight text for visited/current cells
                     const key = r + ',' + c;
                     const w = weights[key];
-                    if (w && (cellType === 'visited' || cellType === 'current')) {
+                    if (w) {
                         cell.classList.add('show-weight');
                         const span = document.createElement('span');
                         span.className = 'cell-weight';
@@ -648,63 +669,52 @@
         function updateStats() {
             document.getElementById('dijSteps').textContent = dijCurrent;
             document.getElementById('astarSteps').textContent = astarCurrent;
+            document.getElementById('dijStatus').textContent = dijDone ? 'Done' : '';
+            document.getElementById('astarStatus').textContent = astarDone ? 'Done' : '';
         }
 
-        function checkFinished() {
-            let dijDone = false;
-            let astarDone = false;
-
-            if (dijCurrent < dijStepsList.length) {
+        function updateCompletionState() {
+            if (!dijDone && dijCurrent < dijStepsList.length) {
                 const dp = dijStepsList[dijCurrent];
                 dijDone = dp[0] === end[0] && dp[1] === end[1];
             }
-            if (astarCurrent < astarStepsList.length) {
+            if (!astarDone && astarCurrent < astarStepsList.length) {
                 const ap = astarStepsList[astarCurrent];
                 astarDone = ap[0] === end[0] && ap[1] === end[1];
             }
+        }
 
-            if (dijDone || astarDone) {
-                finished = true;
-                if (autoInterval) {
-                    clearInterval(autoInterval);
-                    autoInterval = null;
-                }
-
-                let winner;
-                if (dijDone && astarDone) {
-                    winner = dijCurrent <= astarCurrent ? 'dijkstra' : 'astar';
-                } else if (dijDone) {
-                    winner = 'dijkstra';
-                } else {
-                    winner = 'astar';
-                }
-
-                const title = document.getElementById('popupTitle');
-                const msg = document.getElementById('popupMsg');
-                const stats = document.getElementById('popupStats');
-
-                if (winner === 'astar') {
-                    title.textContent = "A* Algorithm Finished First!";
-                    msg.textContent = "A* uses a heuristic (Manhattan distance) to focus its search toward the goal, making it more efficient than Dijkstra's blind exploration.";
-                } else {
-                    title.textContent = "Dijkstra's Algorithm Finished First!";
-                    msg.textContent = "In this maze, Dijkstra's exhaustive approach happened to reach the goal with fewer explored nodes.";
-                }
-                stats.textContent = `Dijkstra: ${dijCurrent} steps · A*: ${astarCurrent} steps`;
-
-                document.getElementById('resultOverlay').classList.add('active');
-                document.getElementById('autoBtn').disabled = true;
-                document.getElementById('stepBtn').disabled = true;
-                return true;
+        function showResults() {
+            finished = true;
+            if (autoInterval) {
+                clearInterval(autoInterval);
+                autoInterval = null;
             }
-            return false;
+
+            const winner = dijCurrent <= astarCurrent ? 'dijkstra' : 'astar';
+            const title = document.getElementById('popupTitle');
+            const msg = document.getElementById('popupMsg');
+            const stats = document.getElementById('popupStats');
+
+            if (winner === 'astar') {
+                title.textContent = 'A* Algorithm Won!';
+                msg.textContent = "A* finished with fewer explored steps overall by focusing its search toward the goal, while Dijkstra continued its broader exploration until it also reached the end.";
+            } else {
+                title.textContent = "Dijkstra's Algorithm Won!";
+                msg.textContent = "Dijkstra finished with fewer explored steps in this maze, even after both algorithms were allowed to complete their runs.";
+            }
+            stats.textContent = `Dijkstra: ${dijCurrent} steps · A*: ${astarCurrent} steps`;
+
+            document.getElementById('resultOverlay').classList.add('active');
+            document.getElementById('autoBtn').disabled = true;
+            document.getElementById('stepBtn').disabled = true;
         }
 
         function doStep() {
             if (finished) return;
 
             // Advance Dijkstra
-            if (dijCurrent < dijStepsList.length - 1) {
+            if (!dijDone && dijCurrent < dijStepsList.length - 1) {
                 dijCurrent++;
                 const pos = dijStepsList[dijCurrent];
                 dijVisited.add(cellKey(pos[0], pos[1]));
@@ -712,15 +722,19 @@
             }
 
             // Advance A*
-            if (astarCurrent < astarStepsList.length - 1) {
+            if (!astarDone && astarCurrent < astarStepsList.length - 1) {
                 astarCurrent++;
                 const pos = astarStepsList[astarCurrent];
                 astarVisited.add(cellKey(pos[0], pos[1]));
                 renderMaze('astarMaze', astarVisited, pos, astarWeights);
             }
 
+            updateCompletionState();
             updateStats();
-            checkFinished();
+
+            if (dijDone && astarDone) {
+                showResults();
+            }
         }
 
         function nextStep() {
